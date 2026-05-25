@@ -1,0 +1,69 @@
+---
+# =============================================================
+# Playbook 03 — Gather Facts on Windows hosts (via WinRM)
+# =============================================================
+- name: "Gather system facts on Windows hosts"
+  hosts: windows_hosts
+  gather_facts: true
+
+  tasks:
+    - name: Test WinRM connectivity
+      ansible.windows.win_ping:
+      register: ping_result
+
+    - name: Display ping result
+      debug:
+        msg: "[{{ inventory_hostname }}] WinRM ping: {{ ping_result.ping }}"
+
+    - name: Display Windows OS information
+      debug:
+        msg: >
+          OS: {{ ansible_os_name | default(ansible_distribution) }}
+          {{ ansible_os_version | default(ansible_distribution_version) }}
+          Build: {{ ansible_os_build_number | default('N/A') }}
+
+    - name: Display hostname and domain
+      debug:
+        msg: >
+          Hostname: {{ ansible_hostname }}
+          FQDN: {{ ansible_fqdn }}
+
+    - name: Display hardware info
+      debug:
+        msg: >
+          CPU cores: {{ ansible_processor_count | default('N/A') }}
+          RAM: {{ (ansible_memtotal_mb / 1024) | round(1) }} GB
+
+    - name: Get current Windows timezone via PowerShell
+      ansible.windows.win_shell: |
+        $tz = Get-TimeZone
+        Write-Output "$($tz.Id)|$($tz.DisplayName)|$($tz.BaseUtcOffset)"
+      register: win_tz_info
+      changed_when: false
+
+    - name: Display Windows timezone
+      debug:
+        msg: "[{{ inventory_hostname }}] Windows TimeZone: {{ win_tz_info.stdout | trim }}"
+
+    - name: Get Windows system uptime
+      ansible.windows.win_shell: |
+        $uptime = (Get-Date) - (gcim Win32_OperatingSystem).LastBootUpTime
+        Write-Output "Uptime: $([math]::Floor($uptime.TotalHours))h $($uptime.Minutes)m"
+      register: win_uptime
+      changed_when: false
+
+    - name: Display uptime
+      debug:
+        msg: "[{{ inventory_hostname }}] {{ win_uptime.stdout | trim }}"
+
+    - name: Save Windows facts to report
+      ansible.windows.win_copy:
+        content: |
+          ===== Windows Host Facts Report =====
+          Hostname    : {{ ansible_hostname }}
+          OS          : {{ ansible_os_name | default(ansible_distribution) }}
+          Build       : {{ ansible_os_build_number | default('N/A') }}
+          Architecture: {{ ansible_architecture }}
+          Timezone    : {{ win_tz_info.stdout | trim }}
+          ======================================
+        dest: 'C:\ansible_facts_report.txt'

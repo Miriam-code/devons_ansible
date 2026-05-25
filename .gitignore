@@ -1,0 +1,35 @@
+# Terraform
+.terraform/
+.terraform.lock.hcl
+terraform.tfstate
+terraform.tfstate.backup
+*.tfplan
+tfplan
+
+# Ansible
+*.retry
+/inventory/hosts.ini
+/ansible/group_vars/all.yml
+/ansible/group_vars/windows_hosts.yml
+
+# Secrets
+*.pem
+*.key
+*.p12
+*password*
+*secret*
+.env
+.env.*
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+
+# Logs
+*.log
+/tmp/

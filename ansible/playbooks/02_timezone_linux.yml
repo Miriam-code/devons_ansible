@@ -1,0 +1,58 @@
+---
+# =============================================================
+# Playbook 02 — Timezone Management for Linux hosts
+# Variables:
+#   target_timezone : IANA timezone string (e.g. "Europe/Paris")
+#                     Falls back to group_vars/all.yml values
+# =============================================================
+- name: "Manage timezone on Linux hosts"
+  hosts: linux_hosts
+  gather_facts: true
+  become: true
+
+  vars:
+    # Can be overridden at runtime: -e "target_timezone=Europe/Paris"
+    target_timezone: "{{ timezone_first }}"
+
+  pre_tasks:
+    - name: Check current timezone before change
+      command: timedatectl show --property=Timezone --value
+      register: tz_before
+      changed_when: false
+
+    - name: "Show timezone BEFORE change"
+      debug:
+        msg: "[{{ inventory_hostname }}] Timezone BEFORE: {{ tz_before.stdout }}"
+
+  roles:
+    - role: timezone
+
+  post_tasks:
+    - name: Check timezone after change
+      command: timedatectl show --property=Timezone --value
+      register: tz_after
+      changed_when: false
+
+    - name: "Show timezone AFTER change"
+      debug:
+        msg: "[{{ inventory_hostname }}] Timezone AFTER: {{ tz_after.stdout }}"
+
+    - name: Verify timezone was correctly applied
+      assert:
+        that:
+          - tz_after.stdout == target_timezone
+        fail_msg: >
+          FAILED: Expected timezone '{{ target_timezone }}' but got
+          '{{ tz_after.stdout }}' on {{ inventory_hostname }}
+        success_msg: >
+          OK: Timezone correctly set to '{{ target_timezone }}'
+          on {{ inventory_hostname }}
+
+    - name: Show current date and time
+      command: date
+      register: current_date
+      changed_when: false
+
+    - name: Display date/time confirmation
+      debug:
+        msg: "[{{ inventory_hostname }}] Current date/time: {{ current_date.stdout }}"

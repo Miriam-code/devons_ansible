@@ -1,0 +1,8 @@
+---
+# roles/timezone/handlers/main.yml
+
+- name: restart_cron
+  service:
+    name: "{{ 'cron' if ansible_os_family == 'Debian' else 'crond' }}"
+    state: restarted
+  listen: restart_cron

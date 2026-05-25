@@ -1,0 +1,5 @@
+---
+# roles/timezone/defaults/main.yml
+# Default values — overridden by playbook vars or group_vars
+
+target_timezone: "Europe/Paris"

@@ -1,0 +1,309 @@
+name: DevOps Pipeline - Terraform + Ansible
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+    inputs:
+      ansible_target:
+        description: 'Target hosts (all, linux, windows)'
+        required: false
+        default: 'all'
+      timezone_first:
+        description: 'First timezone to apply'
+        required: false
+        default: 'Europe/Paris'
+      timezone_second:
+        description: 'Second timezone to apply'
+        required: false
+        default: 'Africa/Abidjan'
+
+env:
+  # Dynamic variables - override via GitHub Secrets or workflow_dispatch
+  UBUNTU_HOST_IP: ${{ vars.UBUNTU_HOST_IP || '192.168.56.101' }}
+  WINDOWS_HOST_IP: ${{ vars.WINDOWS_HOST_IP || '192.168.56.102' }}
+  ANSIBLE_USER_LINUX: ${{ vars.ANSIBLE_USER_LINUX || 'ansible' }}
+  ANSIBLE_USER_WINDOWS: ${{ vars.ANSIBLE_USER_WINDOWS || 'ansible' }}
+  TZ_FIRST: ${{ github.event.inputs.timezone_first || 'Europe/Paris' }}
+  TZ_SECOND: ${{ github.event.inputs.timezone_second || 'Africa/Abidjan' }}
+  ANSIBLE_TARGET: ${{ github.event.inputs.ansible_target || 'all' }}
+  ANSIBLE_FORCE_COLOR: "1"
+  ANSIBLE_HOST_KEY_CHECKING: "False"
+
+jobs:
+  # ─────────────────────────────────────────────
+  # JOB 1 — Terraform: Generate dynamic inventory
+  # ─────────────────────────────────────────────
+  terraform-inventory:
+    name: "🏗️ Terraform — Generate Inventory"
+    runs-on: self-hosted          # <-- Your local Ubuntu runner
+    outputs:
+      inventory_path: ${{ steps.terraform-output.outputs.inventory_path }}
+      ubuntu_ip: ${{ steps.terraform-output.outputs.ubuntu_ip }}
+      windows_ip: ${{ steps.terraform-output.outputs.windows_ip }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.7.0"
+          terraform_wrapper: false
+
+      - name: Terraform Init
+        working-directory: ./terraform
+        run: terraform init
+
+      - name: Terraform Validate
+        working-directory: ./terraform
+        run: terraform validate
+
+      - name: Terraform Plan
+        working-directory: ./terraform
+        env:
+          TF_VAR_ubuntu_host_ip: ${{ env.UBUNTU_HOST_IP }}
+          TF_VAR_windows_host_ip: ${{ env.WINDOWS_HOST_IP }}
+          TF_VAR_ansible_user_linux: ${{ env.ANSIBLE_USER_LINUX }}
+          TF_VAR_ansible_user_windows: ${{ env.ANSIBLE_USER_WINDOWS }}
+          TF_VAR_ssh_private_key_path: ${{ vars.SSH_KEY_PATH || '~/.ssh/ansible_key' }}
+          TF_VAR_winrm_password: ${{ secrets.WINRM_PASSWORD || 'AnsiblePass123!' }}
+        run: terraform plan -out=tfplan
+
+      - name: Terraform Apply — Generate Inventory
+        working-directory: ./terraform
+        env:
+          TF_VAR_ubuntu_host_ip: ${{ env.UBUNTU_HOST_IP }}
+          TF_VAR_windows_host_ip: ${{ env.WINDOWS_HOST_IP }}
+          TF_VAR_ansible_user_linux: ${{ env.ANSIBLE_USER_LINUX }}
+          TF_VAR_ansible_user_windows: ${{ env.ANSIBLE_USER_WINDOWS }}
+          TF_VAR_ssh_private_key_path: ${{ vars.SSH_KEY_PATH || '~/.ssh/ansible_key' }}
+          TF_VAR_winrm_password: ${{ secrets.WINRM_PASSWORD || 'AnsiblePass123!' }}
+        run: terraform apply -auto-approve tfplan
+
+      - name: Display generated inventory
+        id: terraform-output
+        working-directory: ./terraform
+        run: |
+          echo "=== Generated Ansible Inventory ==="
+          cat ../inventory/hosts.ini
+          echo ""
+          echo "=== Generated group_vars ==="
+          cat ../ansible/group_vars/all.yml
+          echo "inventory_path=../inventory/hosts.ini" >> $GITHUB_OUTPUT
+          echo "ubuntu_ip=${UBUNTU_HOST_IP}" >> $GITHUB_OUTPUT
+          echo "windows_ip=${WINDOWS_HOST_IP}" >> $GITHUB_OUTPUT
+
+      - name: Upload inventory as artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ansible-inventory
+          path: |
+            inventory/hosts.ini
+            ansible/group_vars/
+          retention-days: 1
+
+  # ─────────────────────────────────────────────
+  # JOB 2 — Ansible: Gather Facts (localhost)
+  # ─────────────────────────────────────────────
+  ansible-gather-facts:
+    name: "🔍 Ansible — Gather Facts (localhost)"
+    runs-on: self-hosted
+    needs: terraform-inventory
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Download inventory artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: ansible-inventory
+
+      - name: Install Ansible dependencies
+        run: |
+          pip3 install ansible pywinrm requests-credssp --quiet
+
+      - name: Install Ansible collections
+        run: |
+          ansible-galaxy collection install ansible.windows community.windows --force
+
+      - name: Ansible - Gather Facts on localhost
+        run: |
+          echo "=== Gathering system facts on Ansible Controller (localhost) ==="
+          ansible localhost \
+            -m gather_facts \
+            -i inventory/hosts.ini \
+            --connection=local \
+            -e "gather_subset=all" \
+            | tee /tmp/facts_output.txt
+
+      - name: Run gather_facts playbook
+        run: |
+          ansible-playbook \
+            -i inventory/hosts.ini \
+            ansible/playbooks/01_gather_facts.yml \
+            --connection=local \
+            -v
+
+      - name: Upload facts report
+        uses: actions/upload-artifact@v4
+        with:
+          name: facts-report
+          path: /tmp/facts_output.txt
+          retention-days: 7
+
+  # ─────────────────────────────────────────────
+  # JOB 3 — Ansible: Timezone Linux (Ubuntu)
+  # ─────────────────────────────────────────────
+  ansible-timezone-linux:
+    name: "🐧 Ansible — Timezone Linux"
+    runs-on: self-hosted
+    needs: ansible-gather-facts
+    if: ${{ github.event.inputs.ansible_target != 'windows' }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Download inventory artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: ansible-inventory
+
+      - name: Set timezone to ${{ env.TZ_FIRST }} on Linux hosts
+        run: |
+          echo "=== Setting timezone to ${{ env.TZ_FIRST }} ==="
+          ansible-playbook \
+            -i inventory/hosts.ini \
+            ansible/playbooks/02_timezone_linux.yml \
+            --limit linux_hosts \
+            -e "target_timezone=${{ env.TZ_FIRST }}" \
+            -v
+
+      - name: Verify timezone change
+        run: |
+          echo "=== Verifying timezone on Linux hosts ==="
+          ansible linux_hosts \
+            -i inventory/hosts.ini \
+            -m command \
+            -a "timedatectl show --property=Timezone" \
+            -v
+
+      - name: Set timezone to ${{ env.TZ_SECOND }} on Linux hosts
+        run: |
+          echo "=== Switching timezone to ${{ env.TZ_SECOND }} ==="
+          ansible-playbook \
+            -i inventory/hosts.ini \
+            ansible/playbooks/02_timezone_linux.yml \
+            --limit linux_hosts \
+            -e "target_timezone=${{ env.TZ_SECOND }}" \
+            -v
+
+      - name: Final verification
+        run: |
+          echo "=== Final timezone verification on Linux hosts ==="
+          ansible linux_hosts \
+            -i inventory/hosts.ini \
+            -m command \
+            -a "date && timedatectl" \
+            -v
+
+  # ─────────────────────────────────────────────
+  # JOB 4 — Ansible: Timezone Windows (WinRM)
+  # ─────────────────────────────────────────────
+  ansible-timezone-windows:
+    name: "🪟 Ansible — Timezone Windows (WinRM)"
+    runs-on: self-hosted
+    needs: ansible-gather-facts
+    if: ${{ github.event.inputs.ansible_target != 'linux' }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Download inventory artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: ansible-inventory
+
+      - name: Test WinRM connectivity
+        run: |
+          echo "=== Testing WinRM connection to Windows host ==="
+          ansible windows_hosts \
+            -i inventory/hosts.ini \
+            -m ansible.windows.win_ping \
+            -v
+
+      - name: Gather Windows facts
+        run: |
+          echo "=== Gathering facts on Windows host ==="
+          ansible-playbook \
+            -i inventory/hosts.ini \
+            ansible/playbooks/03_gather_facts_windows.yml \
+            --limit windows_hosts \
+            -v
+
+      - name: Set timezone to ${{ env.TZ_FIRST }} on Windows
+        run: |
+          echo "=== Setting Windows timezone to ${{ env.TZ_FIRST }} ==="
+          ansible-playbook \
+            -i inventory/hosts.ini \
+            ansible/playbooks/04_timezone_windows.yml \
+            --limit windows_hosts \
+            -e "target_timezone=${{ env.TZ_FIRST }}" \
+            -v
+
+      - name: Verify Windows timezone
+        run: |
+          ansible windows_hosts \
+            -i inventory/hosts.ini \
+            -m ansible.windows.win_shell \
+            -a "[System.TimeZoneInfo]::Local.DisplayName" \
+            -v
+
+      - name: Set timezone to ${{ env.TZ_SECOND }} on Windows
+        run: |
+          echo "=== Switching Windows timezone to ${{ env.TZ_SECOND }} ==="
+          ansible-playbook \
+            -i inventory/hosts.ini \
+            ansible/playbooks/04_timezone_windows.yml \
+            --limit windows_hosts \
+            -e "target_timezone=${{ env.TZ_SECOND }}" \
+            -v
+
+      - name: Final Windows verification
+        run: |
+          echo "=== Final Windows timezone verification ==="
+          ansible windows_hosts \
+            -i inventory/hosts.ini \
+            -m ansible.windows.win_shell \
+            -a "Get-TimeZone | Select-Object -Property Id, DisplayName | ConvertTo-Json" \
+            -v
+
+  # ─────────────────────────────────────────────
+  # JOB 5 — Summary
+  # ─────────────────────────────────────────────
+  pipeline-summary:
+    name: "📊 Pipeline Summary"
+    runs-on: self-hosted
+    needs: [ansible-timezone-linux, ansible-timezone-windows]
+    if: always()
+
+    steps:
+      - name: Print pipeline summary
+        run: |
+          echo "============================================"
+          echo "  DevOps Pipeline — Execution Summary"
+          echo "============================================"
+          echo "  Branch      : ${{ github.ref_name }}"
+          echo "  Commit      : ${{ github.sha }}"
+          echo "  Runner      : ${{ runner.name }}"
+          echo "  Runner OS   : ${{ runner.os }}"
+          echo "  Ubuntu IP   : ${{ needs.terraform-inventory.outputs.ubuntu_ip }}"
+          echo "  Windows IP  : ${{ needs.terraform-inventory.outputs.windows_ip }}"
+          echo "  TZ Applied  : ${{ env.TZ_FIRST }} → ${{ env.TZ_SECOND }}"
+          echo "  Target      : ${{ env.ANSIBLE_TARGET }}"
+          echo "============================================"

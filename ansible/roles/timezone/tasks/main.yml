@@ -1,0 +1,36 @@
+---
+# roles/timezone/tasks/main.yml
+# Manages timezone on Linux hosts using timedatectl
+
+- name: Validate timezone is not empty
+  assert:
+    that:
+      - target_timezone is defined
+      - target_timezone | length > 0
+    fail_msg: "Variable 'target_timezone' must be defined and non-empty"
+
+- name: Check if timezone is valid (verify zoneinfo file exists)
+  stat:
+    path: "/usr/share/zoneinfo/{{ target_timezone }}"
+  register: tz_file
+
+- name: Fail if timezone is invalid
+  fail:
+    msg: >
+      Invalid timezone: '{{ target_timezone }}'.
+      File /usr/share/zoneinfo/{{ target_timezone }} does not exist.
+  when: not tz_file.stat.exists
+
+- name: Set timezone using timedatectl
+  community.general.timezone:
+    name: "{{ target_timezone }}"
+  notify: restart_cron
+
+- name: Verify timezone was applied
+  command: timedatectl show --property=Timezone --value
+  register: applied_tz
+  changed_when: false
+
+- name: Confirm timezone
+  debug:
+    msg: "Timezone applied: {{ applied_tz.stdout }} on {{ inventory_hostname }}"

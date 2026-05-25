@@ -1,0 +1,73 @@
+---
+# =============================================================
+# Playbook 01 — Gather Facts on Ansible Controller (localhost)
+# =============================================================
+- name: "Gather system facts on Ansible Controller"
+  hosts: controller
+  connection: local
+  gather_facts: true
+
+  tasks:
+    - name: Display controller hostname
+      debug:
+        msg: "Controller hostname: {{ ansible_hostname }}"
+
+    - name: Display OS information
+      debug:
+        msg: >
+          OS: {{ ansible_distribution }} {{ ansible_distribution_version }}
+          ({{ ansible_os_family }}) — Kernel: {{ ansible_kernel }}
+
+    - name: Display network interfaces
+      debug:
+        msg: "Interfaces: {{ ansible_interfaces | join(', ') }}"
+
+    - name: Display default IPv4 address
+      debug:
+        msg: "Default IPv4: {{ ansible_default_ipv4.address | default('N/A') }}"
+
+    - name: Display CPU information
+      debug:
+        msg: >
+          CPU: {{ ansible_processor_vcpus }} vCPU(s) —
+          Architecture: {{ ansible_architecture }}
+
+    - name: Display memory info
+      debug:
+        msg: >
+          RAM: {{ (ansible_memtotal_mb / 1024) | round(1) }} GB total,
+          {{ (ansible_memfree_mb / 1024) | round(1) }} GB free
+
+    - name: Display current timezone
+      command: timedatectl show --property=Timezone --value
+      register: current_tz
+      changed_when: false
+
+    - name: Show current timezone
+      debug:
+        msg: "Current timezone on controller: {{ current_tz.stdout }}"
+
+    - name: Save facts to report file
+      copy:
+        content: |
+          ===== Ansible Controller Facts Report =====
+          Date        : {{ ansible_date_time.iso8601 }}
+          Hostname    : {{ ansible_hostname }}
+          FQDN        : {{ ansible_fqdn }}
+          OS          : {{ ansible_distribution }} {{ ansible_distribution_version }}
+          OS Family   : {{ ansible_os_family }}
+          Kernel      : {{ ansible_kernel }}
+          Architecture: {{ ansible_architecture }}
+          vCPUs       : {{ ansible_processor_vcpus }}
+          RAM (MB)    : {{ ansible_memtotal_mb }}
+          Timezone    : {{ current_tz.stdout }}
+          Default IP  : {{ ansible_default_ipv4.address | default('N/A') }}
+          Python      : {{ ansible_python_version }}
+          ==========================================
+        dest: /tmp/controller_facts_report.txt
+        mode: '0644'
+      delegate_to: localhost
+
+    - name: Print report path
+      debug:
+        msg: "Facts report saved to /tmp/controller_facts_report.txt"
