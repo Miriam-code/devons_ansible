@@ -208,7 +208,7 @@ jobs:
           ansible linux_hosts \
             -i inventory/hosts.ini \
             -m command \
-            -a "date && timedatectl" \
+            -a "date" \
             -v
 
   # ─────────────────────────────────────────────
