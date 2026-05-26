@@ -1,8 +1,74 @@
 # DevOps Infrastructure & Automation — Ansible + Terraform + GitHub Actions
 
 > **Module** : DevOps — Culture, Practices and Tools (CI/CD, IaC, Observability, Security)  
-> **Niveau** : Master 1 Architecte Logiciel & Développeur  
-> **Année** : 2026
+
+## Preuves d'exécution
+
+### Pipeline GitHub Actions — Exécution complète ✅
+
+- **Runner utilisé** : Self-hosted runner local sur ubuntu-controller (192.168.64.2)
+- **Statut** : SUCCESS sur tous les jobs
+
+### Jobs exécutés avec succès
+
+#### Pipeline complet vert
+![Pipeline Success](docs/screenshots/pipeline-success.png)
+
+#### Runner local utilisé
+![Runner](docs/screenshots/runner.png)
+
+## Preuves d'exécution du Pipeline
+
+### Infrastructure déployée
+
+| VM | Rôle | IP | OS |
+|----|------|----|----|
+| ubuntu-controller | Ansible Controller + GitHub Actions Runner | 192.168.64.2 | Ubuntu 22.04 LTS ARM64 |
+| ubuntu-node | Managed Node Linux | 192.168.64.10 | Ubuntu 22.04 LTS ARM64 |
+| windows-11 | Managed Node Windows via WinRM | 192.168.64.8 | Windows 11 Pro ARM64 |
+
+### Pipeline GitHub Actions — Résultats
+
+> Note : Ce projet utilise **GitHub Actions** avec un runner self-hosted local
+> à la place de GitLab CI/CD, conformément aux adaptations convenues.
+
+| Job | Statut | Durée | Description |
+|-----|--------|-------|-------------|
+| Terraform — Generate Inventory | ✅ SUCCESS | 13s | Génération dynamique de l'inventaire Ansible via templates Jinja2 |
+| Ansible — Gather Facts | ✅ SUCCESS | 23s | Collecte des facts système sur le contrôleur (localhost) |
+| Ansible — Timezone Linux | ✅ SUCCESS | 13s | Application Europe/Paris puis Africa/Abidjan sur ubuntu-node |
+| Ansible — Timezone Windows | ✅ SUCCESS | 1m11s | Application via WinRM sur Windows 11 |
+| Pipeline Summary | ✅ SUCCESS | 5s | Résumé d'exécution |
+
+### Preuve du runner local
+
+Le pipeline est exécuté exclusivement par le runner self-hosted installé sur
+**ubuntu-controller** (192.168.64.2) et non par un runner partagé GitHub.
+
+#### Pipeline complet vert
+
+![Pipeline complet](docs/screenshots/pipeline-success.png)
+
+#### Runner local utilisé
+
+![Runner self-hosted](docs/screenshots/runner.png)
+
+![Runner self-hosted](docs/screenshots/runnergit.png)
+
+![Timezone Linux](docs/screenshots/timezone-linux.png)
+
+![Timezone Windows](docs/screenshots/timezone-windows.png)
+
+### Comment relancer le pipeline
+
+1. Démarrer le runner sur ubuntu-controller :
+```bash
+   ssh ansible@192.168.64.2
+   cd ~/actions-runner
+   ./run.sh
+```
+2. Pousser un commit sur la branche `main` ou aller sur
+   GitHub → Actions → DevOps Pipeline → Run workflow
 
 ---
 
