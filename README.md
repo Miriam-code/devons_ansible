@@ -1,21 +1,13 @@
-# DevOps Infrastructure & Automation — Ansible + Terraform + GitHub Actions
+# 🚀 DevOps Infrastructure & Automation — Ansible + Terraform + GitHub Actions
+
+![Pipeline](https://github.com/Miriam-code/devons_ansible/actions/workflows/devops-pipeline.yml/badge.svg)
 
 > **Module** : DevOps — Culture, Practices and Tools (CI/CD, IaC, Observability, Security)  
-
-## Preuves d'exécution
 
 ### Pipeline GitHub Actions — Exécution complète ✅
 
 - **Runner utilisé** : Self-hosted runner local sur ubuntu-controller (192.168.64.2)
 - **Statut** : SUCCESS sur tous les jobs
-
-### Jobs exécutés avec succès
-
-#### Pipeline complet vert
-![Pipeline Success](docs/screenshots/pipeline-success.png)
-
-#### Runner local utilisé
-![Runner](docs/screenshots/runner.png)
 
 ## Preuves d'exécution du Pipeline
 
