@@ -5,7 +5,7 @@
 
 # ── Network (VirtualBox Host-Only: 192.168.56.0/24) ─────────
 ubuntu_host_ip       = "192.168.64.10"
-windows_host_ip      = "192.168.56.102"
+windows_host_ip      = "192.168.64.8"
 
 # ── Ansible connection users ─────────────────────────────────
 ansible_user_linux   = "ansible"
