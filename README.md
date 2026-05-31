@@ -48,6 +48,7 @@ Le pipeline est exécuté exclusivement par le runner self-hosted installé sur
 ![Runner self-hosted](docs/screenshots/runnergit.png)
 
 ![Timezone Linux](docs/screenshots/timezone-linux.png)
+![Timezone Linux](docs/screenshots/timezonelinux.png)
 
 ![Timezone Windows](docs/screenshots/timezone-windows.png)
 
